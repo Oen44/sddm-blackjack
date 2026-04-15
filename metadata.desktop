@@ -1,0 +1,11 @@
+[SddmGreeterTheme]
+Name=blackjack
+Description=Blackjack theme
+Author=Oen44
+License=GPL-3.0
+Type=sddm-theme
+Version=0.1
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=blackjack-theme
+Theme-API=2.0
