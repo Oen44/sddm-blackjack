@@ -12,8 +12,8 @@ Rectangle {
     property var playerHand: []
     property var dealerHand: []
     property var canPlayerAct: false
-    property var showHoleCard: false
     property var playerStands: false
+    property var gameOver: false
 
     function newShoe() {
         deck = Deck.createShuffledDeck();
@@ -31,9 +31,9 @@ Rectangle {
         dealerHandModel.clear();
         deckIndex = 0;
         newShoe();
-        showHoleCard = false;
         canPlayerAct = false;
         playerStands = false;
+        gameOver = false;
         dealAnimation.start();
     }
 
@@ -47,7 +47,8 @@ Rectangle {
 
     function standPlayer() {
         playerStands = true;
-        endGame();
+        canPlayerAct = false;
+        dealerTurnAnimation.restart();
     }
 
     function hitDealer() {
@@ -58,19 +59,13 @@ Rectangle {
         });
     }
 
-    function endGame() {
-        canPlayerAct = false;
-        showHoleCard = true;
-        dealerTurnAnimation.start();
-    }
-
     function getPlayerScore() {
         return Deck.calculateHandValue(playerHand);
     }
 
     function getDealerScore() {
         var handValue = Deck.calculateHandValue(dealerHand);
-        var holeCardValue = !showHoleCard ? (dealerHand.length > 1 ? dealerHand[1].value : 0) : 0;
+        var holeCardValue = !playerStands ? (dealerHand.length > 1 ? dealerHand[1].value : 0) : 0;
         return handValue - holeCardValue;
     }
 
@@ -87,14 +82,14 @@ Rectangle {
     }
 
     function dealerHasBlackjack() {
-        return getDealerScore() === 21 && showHoleCard;
+        return getDealerScore() === 21 && playerStands;
     }
 
     function playerWins() {
         if (playerIsBusted())
             return false;
 
-        if (showHoleCard) {
+        if (playerStands && !dealerTurnAnimation.running) {
             if (dealerIsBusted())
                 return true;
 
@@ -112,7 +107,7 @@ Rectangle {
     function formatPlayerScore() {
         var player = getPlayerScore();
         var dealer = getDealerScore();
-        if (!showHoleCard)
+        if (!playerStands || dealerTurnAnimation.running)
             return "Hand: " + player;
 
         if (playerIsBusted())
@@ -136,8 +131,11 @@ Rectangle {
     function formatDealerScore() {
         var dealer = getDealerScore();
         var player = getPlayerScore();
-        if (!showHoleCard)
+        if (!playerStands || dealerTurnAnimation.running)
             return "Dealer: " + dealer + " + ?";
+
+        if (dealerIsBusted() && playerIsBusted())
+            return "Dealer: " + dealer + " (Busted, Wins)";
 
         if (dealerIsBusted())
             return "Dealer: " + dealer + " (Busted)";
@@ -180,8 +178,7 @@ Rectangle {
                     playerTurnAnimation.stop();
                     return ;
                 }
-                if (playerIsBusted() || dealerIsBusted() && showHoleCard) {
-                    endGame();
+                if (playerIsBusted() || dealerIsBusted() && playerStands) {
                     playerTurnAnimation.stop();
                     return ;
                 }
@@ -196,11 +193,10 @@ Rectangle {
 
         ScriptAction {
             script: {
-                if (playerIsBusted() || dealerIsBusted() && showHoleCard) {
-                    endGame();
-                    return ;
-                }
-                dealerTurnAnimation.start();
+                if (playerIsBusted() || playerHasBlackjack())
+                    standPlayer();
+                else
+                    canPlayerAct = true;
             }
         }
 
@@ -213,16 +209,11 @@ Rectangle {
 
         ScriptAction {
             script: {
-                if (playerIsBusted() || dealerIsBusted() && showHoleCard) {
-                    endGame();
-                    dealerTurnAnimation.stop();
-                    return ;
-                }
                 if (Deck.calculateHandValue(dealerHand) < 17) {
                     hitDealer();
-                } else if (!playerStands) {
-                    canPlayerAct = true;
+                } else {
                     dealerTurnAnimation.stop();
+                    gameOver = true;
                 }
             }
         }
@@ -233,14 +224,7 @@ Rectangle {
 
         ScriptAction {
             script: {
-                if (playerIsBusted() || dealerIsBusted() && showHoleCard) {
-                    endGame();
-                    return ;
-                }
-                if (Deck.calculateHandValue(dealerHand) < 17 && playerStands)
-                    dealerTurnAnimation.restart();
-                else if (!playerStands)
-                    canPlayerAct = true;
+                dealerTurnAnimation.restart();
             }
         }
 
@@ -293,7 +277,10 @@ Rectangle {
 
         ScriptAction {
             script: {
-                canPlayerAct = true;
+                if (playerIsBusted() || playerHasBlackjack())
+                    standPlayer();
+                else
+                    canPlayerAct = true;
             }
         }
 
@@ -343,7 +330,7 @@ Rectangle {
             x: 1400
             y: 100
             source: model.source
-            hidden: index === 1 && !showHoleCard
+            hidden: index === 1 && !playerStands
             Component.onCompleted: {
                 animX.start();
                 animY.start();
@@ -451,7 +438,7 @@ Rectangle {
         fontSize: 32
         width: 140
         height: 60
-        visible: (showHoleCard || deck.length === 0) && !playerWins()
+        visible: gameOver && !playerWins() || deck.length === 0
         onClicked: startGame()
     }
 
@@ -461,11 +448,8 @@ Rectangle {
         y: 1080 - height - 100
         width: 100
         height: 40
-        visible: canPlayerAct
+        visible: canPlayerAct && !playerStands && !playerHasBlackjack()
         onClicked: {
-            if (!canPlayerAct)
-                return ;
-
             standPlayer();
         }
     }
@@ -476,11 +460,8 @@ Rectangle {
         y: 1080 - height - 100
         width: 100
         height: 40
-        visible: canPlayerAct
+        visible: canPlayerAct && !playerStands && !playerHasBlackjack()
         onClicked: {
-            if (!canPlayerAct)
-                return ;
-
             playerTurnAnimation.restart();
         }
     }
@@ -629,6 +610,17 @@ Rectangle {
         height: 30
         anchors.margins: 5
         onClicked: sddm.reboot()
+    }
+
+    Button {
+        text: "Play Again"
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        width: 125
+        height: 30
+        anchors.margins: 5
+        visible: playerWins()
+        onClicked: startGame()
     }
 
 }
